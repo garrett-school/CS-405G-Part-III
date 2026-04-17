@@ -6,7 +6,7 @@ This Part 3 implementation provides a MySQL database schema and a Python command
 
 ## Files
 
-- `create_club_db.sql`: Creates the database, tables, constraints, triggers, and inserts sample data.
+- `sql/schema.sql`: Creates the database, tables, constraints, triggers, and inserts sample data.
 - `config/config.json`: MySQL connection settings in JSON format.
 - `bin/db.py`: Database connection helper functions.
 - `bin/app.py`: Python application logic for managing the club system.
@@ -30,7 +30,7 @@ pip install -r requirements.txt
 2. Create the database and sample data:
 
 ```bash
-mysql -u root -p < create_club_db.sql
+mysql -u root -p < sql/schema.sql
 ```
 
 3. Update `config/config.json` with your MySQL credentials.
