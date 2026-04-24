@@ -19,6 +19,17 @@ CREATE TABLE student (
     grade INT NOT NULL CHECK (grade BETWEEN 6 AND 8)
 );
 
+CREATE TABLE club_year (
+    club_name VARCHAR(100) NOT NULL,
+    school_year CHAR(4) NOT NULL,
+    faculty_id INT NOT NULL,
+    budget_amount DECIMAL(10,2) NOT NULL,
+    PRIMARY KEY (club_name, school_year),
+    CONSTRAINT clubYear_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name),
+    CONSTRAINT clubYear_facultyId_FK FOREIGN KEY (faculty_id) REFERENCES faculty(faculty_id),
+    CONSTRAINT clubYear_budgetAmount_CK CHECK (budget_amount >= 0)
+);
+
 CREATE TABLE meeting (
     meeting_id INT AUTO_INCREMENT PRIMARY KEY,
     club_name VARCHAR(100) NOT NULL,
@@ -28,7 +39,7 @@ CREATE TABLE meeting (
     end_time TIME NOT NULL,
     `description` VARCHAR(250),
     classroom VARCHAR(25),
-    CONSTRAINT meeting_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name)
+    CONSTRAINT meeting_clubYear_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year)
 );
 
 CREATE TABLE event (
@@ -39,7 +50,7 @@ CREATE TABLE event (
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     `description` VARCHAR(250),
-    CONSTRAINT event_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name)
+    CONSTRAINT event_clubYear_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year)
 );
 
 CREATE TABLE expense (
@@ -51,17 +62,6 @@ CREATE TABLE expense (
     `description` VARCHAR(250),
     CONSTRAINT expense_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name),
     CONSTRAINT expense_nonnegative_CK CHECK (amount >= 0)
-);
-
-CREATE TABLE club_year (
-    club_name VARCHAR(100) NOT NULL,
-    school_year CHAR(4) NOT NULL,
-    faculty_id INT NOT NULL,
-    budget_amount DECIMAL(10,2) NOT NULL,
-    PRIMARY KEY (club_name, school_year),
-    CONSTRAINT clubYear_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name),
-    CONSTRAINT clubYear_facultyId_FK FOREIGN KEY (faculty_id) REFERENCES faculty(faculty_id),
-    CONSTRAINT clubYear_budgetAmount_CK CHECK (budget_amount >= 0)
 );
 
 CREATE TABLE member (
