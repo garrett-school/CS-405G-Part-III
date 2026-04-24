@@ -1,82 +1,89 @@
-DROP DATABASE IF EXISTS afterschool_clubs;
-CREATE DATABASE afterschool_clubs CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE afterschool_clubs;
+DROP DATABASE IF EXISTS afterschool_club;
+CREATE DATABASE afterschool_club CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE afterschool_club;
+
+CREATE TABLE club (
+    club_name VARCHAR(100) PRIMARY KEY
+);
 
 CREATE TABLE faculty (
     faculty_id INT AUTO_INCREMENT PRIMARY KEY,
-    first_name VARCHAR(50) NOT NULL,
-    last_name VARCHAR(50) NOT NULL,
+    faculty_name VARCHAR(50) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
-    department VARCHAR(100)
+    phone VARCHAR(15) NOT NULL
 );
 
-CREATE TABLE students (
+CREATE TABLE student (
     student_id INT AUTO_INCREMENT PRIMARY KEY,
-    first_name VARCHAR(50) NOT NULL,
-    last_name VARCHAR(50) NOT NULL,
-    grade INT NOT NULL CHECK (grade BETWEEN 6 AND 8),
-    email VARCHAR(100) UNIQUE
-);
-
-CREATE TABLE clubs (
-    club_id INT AUTO_INCREMENT PRIMARY KEY,
-    club_name VARCHAR(100) NOT NULL UNIQUE,
-    description VARCHAR(255)
+    student_name VARCHAR(50) NOT NULL,
+    grade INT NOT NULL CHECK (grade BETWEEN 6 AND 8)
 );
 
 CREATE TABLE club_year (
-    club_year_id INT AUTO_INCREMENT PRIMARY KEY,
-    club_id INT NOT NULL,
-    year INT NOT NULL,
-    advisor_id INT NOT NULL,
-    budget DECIMAL(12,2) NOT NULL DEFAULT 0,
-    CONSTRAINT uk_club_year UNIQUE (club_id, year),
-    FOREIGN KEY (club_id) REFERENCES clubs(club_id) ON DELETE CASCADE,
-    FOREIGN KEY (advisor_id) REFERENCES faculty(faculty_id) ON DELETE RESTRICT
+    club_name VARCHAR(100) NOT NULL,
+    school_year CHAR(4) NOT NULL,
+    faculty_id INT NOT NULL,
+    budget_amount DECIMAL(10,2) NOT NULL,
+    PRIMARY KEY (club_name, school_year),
+    CONSTRAINT clubYear_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name),
+    CONSTRAINT clubYear_facultyId_FK FOREIGN KEY (faculty_id) REFERENCES faculty(faculty_id),
+    CONSTRAINT clubYear_budgetAmount_CK CHECK (budget_amount >= 0)
 );
 
-CREATE TABLE club_membership (
-    membership_id INT AUTO_INCREMENT PRIMARY KEY,
-    student_id INT NOT NULL,
-    club_year_id INT NOT NULL,
-    joined_on DATE NOT NULL,
-    CONSTRAINT uk_student_club_year UNIQUE (student_id, club_year_id),
-    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
-    FOREIGN KEY (club_year_id) REFERENCES club_year(club_year_id) ON DELETE CASCADE
-);
-
-CREATE TABLE activity (
-    activity_id INT AUTO_INCREMENT PRIMARY KEY,
-    club_year_id INT NOT NULL,
-    activity_type ENUM('meeting', 'event') NOT NULL,
-    activity_date DATE NOT NULL,
+CREATE TABLE meeting (
+    meeting_id INT AUTO_INCREMENT PRIMARY KEY,
+    club_name VARCHAR(100) NOT NULL,
+    school_year CHAR(4) NOT NULL,
+    meeting_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
-    description VARCHAR(255) NOT NULL,
-    classroom VARCHAR(50) NOT NULL,
-    CHECK (start_time < end_time),
-    FOREIGN KEY (club_year_id) REFERENCES club_year(club_year_id) ON DELETE CASCADE
+    `description` VARCHAR(250),
+    classroom VARCHAR(25),
+    CONSTRAINT meeting_clubYear_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year)
 );
 
-CREATE TABLE expenses (
-    expense_id INT AUTO_INCREMENT PRIMARY KEY,
-    club_year_id INT NOT NULL,
-    expense_date DATE NOT NULL,
-    amount DECIMAL(12,2) NOT NULL CHECK (amount >= 0),
-    description VARCHAR(255),
-    FOREIGN KEY (club_year_id) REFERENCES club_year(club_year_id) ON DELETE CASCADE
+CREATE TABLE event (
+    event_id INT AUTO_INCREMENT PRIMARY KEY,
+    club_name VARCHAR(100) NOT NULL,
+    school_year CHAR(4) NOT NULL,
+    event_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    `description` VARCHAR(250),
+    CONSTRAINT event_clubYear_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year)
 );
+
+CREATE TABLE expense (
+    expense_id INT AUTO_INCREMENT PRIMARY KEY,
+    club_name VARCHAR(100) NOT NULL,
+    school_year CHAR(4) NOT NULL,
+    expense_date DATE NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    `description` VARCHAR(250),
+    CONSTRAINT expense_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name),
+    CONSTRAINT expense_nonnegative_CK CHECK (amount >= 0)
+);
+
+CREATE TABLE member (
+    club_name VARCHAR(100) NOT NULL,
+    school_year CHAR(4) NOT NULL,
+    student_id INT NOT NULL,
+    PRIMARY KEY (club_name, school_year, student_id),
+    CONSTRAINT member_clubYear_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year),
+    CONSTRAINT member_studentId_FK FOREIGN KEY (student_id) REFERENCES student(student_id)
+);
+
 
 DELIMITER $$
 CREATE TRIGGER trg_activity_before_insert
-BEFORE INSERT ON activity
+BEFORE INSERT ON meeting
 FOR EACH ROW
 BEGIN
     DECLARE overlap_count INT DEFAULT 0;
 
     SELECT COUNT(*) INTO overlap_count
-    FROM activity
-    WHERE activity_date = NEW.activity_date
+    FROM meeting
+    WHERE meeting_date = NEW.meeting_date
       AND classroom = NEW.classroom
       AND NEW.start_time < end_time
       AND NEW.end_time > start_time;
@@ -86,9 +93,9 @@ BEGIN
     END IF;
 
     SELECT COUNT(*) INTO overlap_count
-    FROM activity
-    WHERE activity_date = NEW.activity_date
-      AND club_year_id = NEW.club_year_id
+    FROM meeting
+    WHERE meeting_date = NEW.meeting_date
+      AND club_name = NEW.club_name
       AND NEW.start_time < end_time
       AND NEW.end_time > start_time;
 
@@ -98,18 +105,18 @@ BEGIN
 END$$
 
 CREATE TRIGGER trg_activity_before_update
-BEFORE UPDATE ON activity
+BEFORE UPDATE ON meeting
 FOR EACH ROW
 BEGIN
     DECLARE overlap_count INT DEFAULT 0;
 
     SELECT COUNT(*) INTO overlap_count
     FROM activity
-    WHERE activity_date = NEW.activity_date
+    WHERE meeting_date = NEW.meeting_date
       AND classroom = NEW.classroom
       AND NEW.start_time < end_time
       AND NEW.end_time > start_time
-      AND activity_id <> OLD.activity_id;
+      AND meeting_id <> OLD.meeting_id;
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Classroom double-booking detected for the requested time slot.';
@@ -117,68 +124,78 @@ BEGIN
 
     SELECT COUNT(*) INTO overlap_count
     FROM activity
-    WHERE activity_date = NEW.activity_date
-      AND club_year_id = NEW.club_year_id
+    WHERE meeting_date = NEW.meeting_date
+      AND club_name = NEW.club_name
       AND NEW.start_time < end_time
       AND NEW.end_time > start_time
-      AND activity_id <> OLD.activity_id;
+      AND meeting_id <> OLD.meeting_id;
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Club cannot schedule overlapping activities on the same date.';
     END IF;
 END$$
+
+-- Create trigger to check remaining budget when creating expenses?
+
 DELIMITER ;
 
-INSERT INTO faculty (first_name, last_name, email, department) VALUES
-('Alice', 'Chen', 'alice.chen@middleschool.edu', 'Music'),
-('Bob', 'Davis', 'bob.davis@middleschool.edu', 'STEM'),
-('Carla', 'Evans', 'carla.evans@middleschool.edu', 'English'),
-('Daniel', 'Ford', 'daniel.ford@middleschool.edu', 'Math');
+INSERT INTO faculty (faculty_name, email, phone) VALUES
+('Alice Chen', 'alice.chen@middleschool.edu', '8595551234'),
+('Bob Davis', 'bob.davis@middleschool.edu', '8595555678'),
+('Carla Evans', 'carla.evans@middleschool.edu', '8595559012'),
+('Daniel Ford', 'daniel.ford@middleschool.edu', '8595553456');
 
-INSERT INTO students (first_name, last_name, grade, email) VALUES
-('Mia', 'Johnson', 6, 'mia.johnson@student.edu'),
-('Noah', 'Kim', 7, 'noah.kim@student.edu'),
-('Ava', 'Lopez', 6, 'ava.lopez@student.edu'),
-('Ethan', 'Patel', 8, 'ethan.patel@student.edu'),
-('Zoe', 'Smith', 7, 'zoe.smith@student.edu'),
-('Lucas', 'Nguyen', 6, 'lucas.nguyen@student.edu'),
-('Emma', 'Brown', 8, 'emma.brown@student.edu'),
-('Owen', 'Garcia', 7, 'owen.garcia@student.edu');
+INSERT INTO student (student_name, grade) VALUES
+('Mia Johnson', 6),
+('Noah Kim', 7),
+('Ava Lopez', 6),
+('Ethan Patel', 8),
+('Zoe Smith', 7),
+('Lucas Nguyen', 6),
+('Emma Brown', 8),
+('Owen Garcia', 7);
 
-INSERT INTO clubs (club_name, description) VALUES
-('Band', 'After-school band practice and performances'),
-('Orchestra', 'String orchestra rehearsal and events'),
-('MathCounts', 'Mathematics competition preparation'),
-('Robotics', 'Robotics build and programming club'),
-('Drama', 'School drama club rehearsals and productions');
+INSERT INTO club VALUES
+('Band'),
+('Orchestra'),
+('MathCounts'),
+('Robotics'),
+('Drama');
 
-INSERT INTO club_year (club_id, year, advisor_id, budget) VALUES
-((SELECT club_id FROM clubs WHERE club_name = 'Band'), 2024, 1, 8000.00),
-((SELECT club_id FROM clubs WHERE club_name = 'Orchestra'), 2024, 1, 7500.00),
-((SELECT club_id FROM clubs WHERE club_name = 'MathCounts'), 2024, 4, 5000.00),
-((SELECT club_id FROM clubs WHERE club_name = 'Robotics'), 2024, 2, 9000.00),
-((SELECT club_id FROM clubs WHERE club_name = 'Drama'), 2024, 3, 6000.00),
-((SELECT club_id FROM clubs WHERE club_name = 'Band'), 2025, 1, 8200.00),
-((SELECT club_id FROM clubs WHERE club_name = 'MathCounts'), 2025, 4, 5200.00);
+INSERT INTO club_year VALUES
+('Band', '2024', 1, 8000.00),
+('Orchestra', '2024', 1, 7500.00),
+('MathCounts', '2024', 4, 5000.00),
+('Robotics', '2024', 2, 9000.00),
+('Drama', '2024', 3, 6000.00),
+('Band', '2025', 1, 8200.00),
+('MathCounts', '2025', 2, 5200.00);
 
-INSERT INTO club_membership (student_id, club_year_id, joined_on) VALUES
-((SELECT student_id FROM students WHERE first_name = 'Mia' AND last_name = 'Johnson'), (SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Band')), '2024-09-05'),
-((SELECT student_id FROM students WHERE first_name = 'Noah' AND last_name = 'Kim'), (SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Band')), '2024-09-05'),
-((SELECT student_id FROM students WHERE first_name = 'Ava' AND last_name = 'Lopez'), (SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'MathCounts')), '2024-09-06'),
-((SELECT student_id FROM students WHERE first_name = 'Ethan' AND last_name = 'Patel'), (SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Robotics')), '2024-09-07'),
-((SELECT student_id FROM students WHERE first_name = 'Zoe' AND last_name = 'Smith'), (SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Drama')), '2024-09-05'),
-((SELECT student_id FROM students WHERE first_name = 'Lucas' AND last_name = 'Nguyen'), (SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Orchestra')), '2024-09-08'),
-((SELECT student_id FROM students WHERE first_name = 'Emma' AND last_name = 'Brown'), (SELECT club_year_id FROM club_year WHERE year = 2025 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Band')), '2025-09-05');
+INSERT INTO member VALUES
+('Band', '2024', 7),
+('Band', '2024', 1),
+('MathCounts', '2024', 2),
+('Robotics', '2024', 3),
+('Drama', '2024', 4),
+('Orchestra', '2024', 5),
+('Band', '2025', 6);
 
-INSERT INTO activity (club_year_id, activity_type, activity_date, start_time, end_time, description, classroom) VALUES
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Band')), 'meeting', '2024-09-12', '16:00:00', '17:30:00', 'Fall rehearsal', 'Room 101'),
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Band')), 'event', '2024-10-05', '15:30:00', '18:00:00', 'Community concert', 'Auditorium'),
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'MathCounts')), 'meeting', '2024-09-13', '15:30:00', '17:00:00', 'Problem solving practice', 'Room 202'),
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Robotics')), 'meeting', '2024-09-14', '16:00:00', '18:00:00', 'Robot programming', 'Room 303'),
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Drama')), 'event', '2024-10-20', '17:00:00', '19:00:00', 'Play audition', 'Auditorium');
+INSERT INTO meeting (club_name, school_year, meeting_date, start_time, end_time, `description`, classroom) VALUES
+('Band', '2024', '2024-09-12', '16:00:00', '17:30:00', 'Fall rehearsal', 'Room 101'),
+('Band', '2024', '2024-10-05', '15:30:00', '18:00:00', 'Community concert', 'Auditorium'),
+('MathCounts', '2024', '2024-09-13', '15:30:00', '17:00:00', 'Problem solving practice', 'Room 202'),
+('Robotics', '2024', '2024-09-14', '16:00:00', '18:00:00', 'Robot programming', 'Room 303'),
+('Drama', '2024', '2024-10-20', '17:00:00', '19:00:00', 'Play audition', 'Auditorium');
 
-INSERT INTO expenses (club_year_id, expense_date, amount, description) VALUES
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Band')), '2024-09-20', 1250.00, 'Instrument rental'),
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'MathCounts')), '2024-09-25', 450.00, 'Competition registration'),
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Robotics')), '2024-09-30', 1800.00, 'Hardware parts'),
-((SELECT club_year_id FROM club_year WHERE year = 2024 AND club_id = (SELECT club_id FROM clubs WHERE club_name = 'Drama')), '2024-10-10', 900.00, 'Costume materials');
+INSERT INTO `event` (club_name, school_year, event_date, start_time, end_time, `description`) VALUES
+('Band', '2024', '2024-10-15', '09:00:00', '13:30:00', 'Symphony field trip'),
+('MathCounts', '2024', '2024-09-20', '13:45:00', '15:00:00', 'Fall competition'),
+('MathCounts', '2024', '2025-03-14', '13:45:00', '15:00:00', 'Spring competition'),
+('Robotics', '2024', '2025-02-28', '16:00:00', '18:00:00', 'League tournament'),
+('Drama', '2024', '2024-10-03', '09:00:00', '15:00:00', 'Museum trip');
+
+INSERT INTO expense (club_name, school_year, expense_date, amount, `description`) VALUES
+('Band', '2024', '2024-09-20', 1250.00, 'Instrument rental'),
+('MathCounts', '2024', '2024-09-25', 450.00, 'Competition registration'),
+('Robotics', '2024', '2024-09-30', 1800.00, 'Hardware parts'),
+('Drama', '2024', '2024-10-10', 900.00, 'Costume materials');

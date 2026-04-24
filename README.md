@@ -30,7 +30,10 @@ pip install -r requirements.txt
 2. Create the database and sample data:
 
 ```bash
-mysql -u root -p < sql/schema.sql
+mysql -u root -p
+CREATE DATABASE afterschool_clubs;
+USE afterschool_clubs;
+SOURCE ./sql/schema.sql;
 ```
 
 3. Update `config/config.json` with your MySQL credentials.
