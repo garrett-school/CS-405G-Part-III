@@ -1,60 +1,128 @@
-# After-School Club Management System
+# CS405 Project: Middle-School Club Management System
 
-Team members: [Add all group members' names here]
+Team members: Brett Carson, Jacob Schuetter, Garrett Strange, and Alex Vela
 
-This Part 3 implementation provides a MySQL database schema and a Python command-line application to manage after-school clubs, advisors, students, meetings, events, budgets, and expenses.
+This project is a MySQL database and Python command-line application for managing a middle school's after-school clubs. It stores info about clubs, faculty advisors, students, memberships, meetings, events, budgets, and expenses.
 
 ## Files
 
-- `sql/schema.sql`: Creates the database, tables, constraints, triggers, and inserts sample data.
-- `config/config.json`: MySQL connection settings in JSON format.
-- `bin/db.py`: Database connection helper functions.
-- `bin/app.py`: Python application logic for managing the club system.
-- `main.py`: Root entry point for the application.
-- `requirements.txt`: Python dependency list.
+- `schema.sql`: Creates the database tables, constraints, views, triggers, and some sample data for testing
 
-## Prerequisites
+- `app.py`: Python program for viewing and managing the club data.
 
-- MySQL 8.0 or later
-- Python 3.10+ installed
-- `mysql-connector-python` Python package
+- `README.md`: General information, setup, and running instructions
 
-## Setup
+## Required Software and Libraries
 
-1. Install Python dependencies:
+- MySQL 
+- Python 3
+- `mysql-connector-python`
+
+Install the Python library with:
 
 ```bash
-pip install -r requirements.txt
+python3 -m pip install mysql-connector-python
 ```
 
-2. Create the database and sample data:
+## Database Setup
+
+schema.sql is database-name neutral, so select the database name when running it. 
+You can use either the UK CS MySQL server or your own local MySQL installation
+
+### Option A: UK CS MySQL Server
+
+Run:
+
+```bash
+mysql -h mysql.cs.uky.edu -u YOUR_USERNAME -p YOUR_DATABASE_NAME < schema.sql
+```
+
+### Option B: Local MySQL
+
+First, create a database with statement:
 
 ```bash
 mysql -u root -p
-CREATE DATABASE afterschool_clubs;
-USE afterschool_clubs;
-SOURCE ./sql/schema.sql;
 ```
 
-3. Update `config/config.json` with your MySQL credentials.
+Next, in MySQL, use statement:
 
-## Running the Application
+```sql
+CREATE DATABASE IF NOT EXISTS afterschool_club;
+exit;
+```
 
-Run the Python application from the project directory:
+Then, load the schema with statement:
 
 ```bash
-python main.py
+mysql -u root -p afterschool_club < schema.sql
 ```
 
-The application provides a command menu for:
 
-- adding and deleting meetings/events
-- recording budgets and expenses
-- managing advisors and student memberships
-- viewing club members, advisors, schedules, and financial reports
-- checking scheduling conflicts
+## Running the Python Program
 
-## Notes
+Run the program from the folder containing `app.py` with statement:
 
-- Scheduling conflict checks are enforced by MySQL triggers in the `activity` table.
-- Sample data includes clubs, faculty advisors, students, yearly budgets, activities, and expenses for 2024 and 2025.
+```bash
+python3 app.py
+```
+
+The program will ask for the database name and MySQL password.
+
+By default, the program uses:
+
+- host: `mysql.cs.uky.edu`
+- username: same as the database name
+
+To use a different MySQL host or username, set these environment variables before running.
+
+Example (if using local MySQL):
+
+```bash
+MYSQL_HOST=localhost MYSQL_USER=root python3 app.py
+```
+
+Then fill in the following:
+
+```text
+Database name: afterschool_club
+MySQL password: your local MySQL password
+```
+
+Then, you can navigate through the menu in the Python program to view and manage the database data.
+
+
+## Application Functionality
+
+The Python program provides a menu that supports basic database operations, including:
+
+- view all clubs and advisors for a school year
+- view students in a club for a school year
+- view meetings and events for a club
+- view a club's budget, total expenses, and remaining budget
+- view total budget across all clubs for a school year
+- add meetings and events
+- delete meetings and events
+- record expenses
+- add or remove student memberships
+- view all clubs for a student
+- view a student's schedule on a specific date
+- assign or update a faculty advisor for a club-year
+- view all clubs advised by a faculty member
+- record or update a budget for a club-year
+
+
+## Important Database Constraints
+
+The database enforces the major project constraints, including:
+
+- each club has a unique club name
+- each faculty member and student has a unique ID
+- each active club-year has exactly one advisor through advises(club_name, school_year, faculty_id)
+- year-specific records such as meetings, events, memberships, and budgets must reference a valid club-year advisor assignment
+- budgets and expenses must be nonnegative
+- meeting and event start times must be before end times
+- expenses must reference an existing budget for that club-year
+- triggers prevent double-booking of classrooms for meetings
+- triggers reject overlapping meetings or events for the same club on the same date
+- triggers reject a meeting that overlaps with an event for the same club on the same date, and vice versa

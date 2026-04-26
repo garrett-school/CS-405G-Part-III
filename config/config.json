@@ -1,7 +1,0 @@
-{
-  "host": "localhost",
-  "user": "root",
-  "password": "Your Password",
-  "database": "afterschool_club",
-  "raise_on_warnings": true
-}
