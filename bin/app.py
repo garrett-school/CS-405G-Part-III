@@ -37,29 +37,29 @@ def fetch_one(cursor, query, params=None):
     return cursor.fetchone()
 
 
-def select_club_year_id(cursor, club_name, year):
+def club_year_exists(cursor, club_name, school_year):
     result = fetch_one(
         cursor,
-        'SELECT cy.club_year_id FROM club_year cy JOIN clubs c ON cy.club_id = c.club_id WHERE c.club_name = %s AND cy.year = %s',
-        (club_name, year),
+        'SELECT 1 FROM club_year WHERE club_name = %s AND school_year = %s',
+        (club_name, school_year),
+    )
+    return result is not None
+
+
+def select_student_id(cursor, student_name):
+    result = fetch_one(
+        cursor,
+        'SELECT student_id FROM student WHERE student_name = %s',
+        (student_name,),
     )
     return result[0] if result else None
 
 
-def select_student_id(cursor, first_name, last_name):
+def select_faculty_id(cursor, faculty_name):
     result = fetch_one(
         cursor,
-        'SELECT student_id FROM students WHERE first_name = %s AND last_name = %s',
-        (first_name, last_name),
-    )
-    return result[0] if result else None
-
-
-def select_faculty_id(cursor, first_name, last_name):
-    result = fetch_one(
-        cursor,
-        'SELECT faculty_id FROM faculty WHERE first_name = %s AND last_name = %s',
-        (first_name, last_name),
+        'SELECT faculty_id FROM faculty WHERE faculty_name = %s',
+        (faculty_name,),
     )
     return result[0] if result else None
 
@@ -67,13 +67,12 @@ def select_faculty_id(cursor, first_name, last_name):
 def add_activity(cursor):
     print('\nAdd meeting or event')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
+    school_year = input('Year: ').strip()
     activity_type = input('Type (meeting/event): ').strip().lower()
     date_text = input('Date (YYYY-MM-DD): ').strip()
     start_text = input('Start time (HH:MM): ').strip()
     end_text = input('End time (HH:MM): ').strip()
     description = input('Description: ').strip()
-    classroom = input('Classroom: ').strip()
 
     if activity_type not in ('meeting', 'event'):
         print('Invalid activity type.')
@@ -87,15 +86,22 @@ def add_activity(cursor):
         print('Date or time format is invalid.')
         return
 
-    club_year_id = select_club_year_id(cursor, club_name, year)
-    if not club_year_id:
+    if not club_year_exists(cursor, club_name, school_year):
         print('Club or year not found. Please use an existing club/year combination.')
         return
 
-    query = '''INSERT INTO activity (club_year_id, activity_type, activity_date, start_time, end_time, description, classroom)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)'''
     try:
-        cursor.execute(query, (club_year_id, activity_type, activity_date, start_time, end_time, description, classroom))
+        if activity_type == 'meeting':
+            classroom = input('Classroom: ').strip()
+            cursor.execute(
+                'INSERT INTO meeting (club_name, school_year, meeting_date, start_time, end_time, description, classroom) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+                (club_name, school_year, activity_date, start_time, end_time, description, classroom),
+            )
+        else:
+            cursor.execute(
+                'INSERT INTO `event` (club_name, school_year, event_date, start_time, end_time, description) VALUES (%s, %s, %s, %s, %s, %s)',
+                (club_name, school_year, activity_date, start_time, end_time, description),
+            )
         print('Activity added successfully.')
     except Error as err:
         print('Failed to add activity:', err)
@@ -103,18 +109,31 @@ def add_activity(cursor):
 
 def delete_activity(cursor):
     print('\nDelete meeting or event')
-    rows = fetch_all(cursor, 'SELECT a.activity_id, c.club_name, cy.year, a.activity_type, a.activity_date, a.start_time, a.end_time, a.classroom, a.description FROM activity a JOIN club_year cy ON a.club_year_id = cy.club_year_id JOIN clubs c ON cy.club_id = c.club_id ORDER BY a.activity_date, a.start_time')
+    meetings = fetch_all(
+        cursor,
+        "SELECT meeting_id, club_name, school_year, 'meeting', meeting_date, start_time, end_time, classroom, description FROM meeting ORDER BY meeting_date, start_time",
+    )
+    events = fetch_all(
+        cursor,
+        "SELECT event_id, club_name, school_year, 'event', event_date, start_time, end_time, NULL, description FROM `event` ORDER BY event_date, start_time",
+    )
+    rows = [('M', *r) for r in meetings] + [('E', *r) for r in events]
     if not rows:
         print('No activities found.')
         return
-    for row in rows:
-        activity_id, club_name, year, activity_type, activity_date, start_time, end_time, classroom, description = row
-        print(f'{activity_id}: {club_name} ({year}) {activity_type} {activity_date} {start_time}-{end_time} in {classroom} - {description}')
-    activity_id = input('Enter activity_id to delete: ').strip()
-    if not activity_id.isdigit():
+    for prefix, row_id, club_name, school_year, activity_type, activity_date, start_time, end_time, classroom, description in rows:
+        classroom_str = classroom if classroom else 'N/A'
+        print(f'{prefix}{row_id}: {club_name} ({school_year}) {activity_type} {activity_date} {start_time}-{end_time} in {classroom_str} - {description}')
+    activity_ref = input('Enter ID to delete (M# for meeting, E# for event, e.g. M1 or E2): ').strip().upper()
+    if not activity_ref or activity_ref[0] not in ('M', 'E') or not activity_ref[1:].isdigit():
         print('Invalid ID.')
         return
-    cursor.execute('DELETE FROM activity WHERE activity_id = %s', (activity_id,))
+    prefix = activity_ref[0]
+    row_id = int(activity_ref[1:])
+    if prefix == 'M':
+        cursor.execute('DELETE FROM meeting WHERE meeting_id = %s', (row_id,))
+    else:
+        cursor.execute('DELETE FROM `event` WHERE event_id = %s', (row_id,))
     if cursor.rowcount:
         print('Activity deleted.')
     else:
@@ -124,36 +143,33 @@ def delete_activity(cursor):
 def view_students_in_club(cursor):
     print('\nView students in a club for a year')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
-    query = '''SELECT s.first_name, s.last_name, s.grade, cm.joined_on
-               FROM club_membership cm
-               JOIN students s ON cm.student_id = s.student_id
-               JOIN club_year cy ON cm.club_year_id = cy.club_year_id
-               JOIN clubs c ON cy.club_id = c.club_id
-               WHERE c.club_name = %s AND cy.year = %s
-               ORDER BY s.last_name, s.first_name'''
-    rows = fetch_all(cursor, query, (club_name, year))
+    school_year = input('Year: ').strip()
+    query = '''SELECT s.student_name, s.grade
+               FROM member m
+               JOIN student s ON m.student_id = s.student_id
+               WHERE m.club_name = %s AND m.school_year = %s
+               ORDER BY s.student_name'''
+    rows = fetch_all(cursor, query, (club_name, school_year))
     if rows:
-        print(f'Club members for {club_name} ({year}):')
-        for first_name, last_name, grade, joined_on in rows:
-            print(f'- {first_name} {last_name}, grade {grade}, joined on {joined_on}')
+        print(f'Club members for {club_name} ({school_year}):')
+        for student_name, grade in rows:
+            print(f'- {student_name}, grade {grade}')
     else:
         print('No members found or invalid club/year.')
 
 
 def view_clubs_and_advisors(cursor):
     print('\nView all clubs and advisors for a year')
-    year = input('Year: ').strip()
-    query = '''SELECT c.club_name, CONCAT(f.first_name, ' ', f.last_name), cy.budget
+    school_year = input('Year: ').strip()
+    query = '''SELECT cy.club_name, f.faculty_name, cy.budget_amount
                FROM club_year cy
-               JOIN clubs c ON cy.club_id = c.club_id
-               JOIN faculty f ON cy.advisor_id = f.faculty_id
-               WHERE cy.year = %s
-               ORDER BY c.club_name'''
-    rows = fetch_all(cursor, query, (year,))
+               JOIN faculty f ON cy.faculty_id = f.faculty_id
+               WHERE cy.school_year = %s
+               ORDER BY cy.club_name'''
+    rows = fetch_all(cursor, query, (school_year,))
     if rows:
-        for club_name, faculty_name, budget in rows:
-            print(f'- {club_name}: Advisor {faculty_name}, budget ${budget:.2f}')
+        for club_name, faculty_name, budget_amount in rows:
+            print(f'- {club_name}: Advisor {faculty_name}, budget ${budget_amount:.2f}')
     else:
         print('No clubs found for that year.')
 
@@ -161,17 +177,20 @@ def view_clubs_and_advisors(cursor):
 def view_club_schedule(cursor):
     print('\nView club schedule for a year')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
-    query = '''SELECT a.activity_type, a.activity_date, a.start_time, a.end_time, a.classroom, a.description
-               FROM activity a
-               JOIN club_year cy ON a.club_year_id = cy.club_year_id
-               JOIN clubs c ON cy.club_id = c.club_id
-               WHERE c.club_name = %s AND cy.year = %s
-               ORDER BY a.activity_date, a.start_time'''
-    rows = fetch_all(cursor, query, (club_name, year))
+    school_year = input('Year: ').strip()
+    query = '''SELECT 'meeting' AS activity_type, meeting_date AS activity_date, start_time, end_time, classroom, description
+               FROM meeting
+               WHERE club_name = %s AND school_year = %s
+               UNION ALL
+               SELECT 'event', event_date, start_time, end_time, NULL, description
+               FROM `event`
+               WHERE club_name = %s AND school_year = %s
+               ORDER BY activity_date, start_time'''
+    rows = fetch_all(cursor, query, (club_name, school_year, club_name, school_year))
     if rows:
         for activity_type, activity_date, start_time, end_time, classroom, description in rows:
-            print(f'- {activity_date}: {activity_type} from {start_time} to {end_time} in {classroom} - {description}')
+            classroom_str = f' in {classroom}' if classroom else ''
+            print(f'- {activity_date}: {activity_type} from {start_time} to {end_time}{classroom_str} - {description}')
     else:
         print('No schedule found for that club in that year.')
 
@@ -179,35 +198,33 @@ def view_club_schedule(cursor):
 def record_budget(cursor):
     print('\nRecord or update club budget')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
+    school_year = input('Year: ').strip()
     amount = input('Budget amount: ').strip()
     try:
         budget = float(amount)
     except ValueError:
         print('Invalid amount.')
         return
-    club_year_id = select_club_year_id(cursor, club_name, year)
-    if club_year_id:
-        cursor.execute('UPDATE club_year SET budget = %s WHERE club_year_id = %s', (budget, club_year_id))
+    if club_year_exists(cursor, club_name, school_year):
+        cursor.execute('UPDATE club_year SET budget_amount = %s WHERE club_name = %s AND school_year = %s', (budget, club_name, school_year))
         print('Budget updated.')
     else:
-        advisor_name = input('Advisor first and last name: ').strip().split()
-        if len(advisor_name) != 2:
-            print('Provide first and last name for advisor.')
-            return
-        advisor_id = select_faculty_id(cursor, advisor_name[0], advisor_name[1])
-        if not advisor_id:
+        faculty_name = input('Faculty advisor name: ').strip()
+        faculty_id = select_faculty_id(cursor, faculty_name)
+        if not faculty_id:
             print('Advisor not found.')
             return
-        cursor.execute('INSERT INTO club_year (club_id, year, advisor_id, budget) VALUES ((SELECT club_id FROM clubs WHERE club_name = %s), %s, %s, %s)',
-                       (club_name, year, advisor_id, budget))
+        cursor.execute(
+            'INSERT INTO club_year (club_name, school_year, faculty_id, budget_amount) VALUES (%s, %s, %s, %s)',
+            (club_name, school_year, faculty_id, budget),
+        )
         print('Club/year record created and budget recorded.')
 
 
 def record_expense(cursor):
     print('\nRecord expense for a club')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
+    school_year = input('Year: ').strip()
     amount_text = input('Expense amount: ').strip()
     description = input('Description: ').strip()
     date_text = input('Expense date (YYYY-MM-DD): ').strip()
@@ -219,103 +236,94 @@ def record_expense(cursor):
         print('Invalid amount or date format.')
         return
 
-    club_year_id = select_club_year_id(cursor, club_name, year)
-    if not club_year_id:
+    if not club_year_exists(cursor, club_name, school_year):
         print('Club/year not found.')
         return
-    cursor.execute('INSERT INTO expenses (club_year_id, expense_date, amount, description) VALUES (%s, %s, %s, %s)',
-                   (club_year_id, expense_date, amount, description))
+    cursor.execute(
+        'INSERT INTO expense (club_name, school_year, expense_date, amount, description) VALUES (%s, %s, %s, %s, %s)',
+        (club_name, school_year, expense_date, amount, description),
+    )
     print('Expense recorded.')
 
 
 def report_club_summary(cursor):
     print('\nReport club expense summary')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
-    query = '''SELECT c.club_name, cy.year, cy.budget, IFNULL(SUM(e.amount), 0)
+    school_year = input('Year: ').strip()
+    query = '''SELECT cy.club_name, cy.school_year, cy.budget_amount, IFNULL(SUM(e.amount), 0)
                FROM club_year cy
-               JOIN clubs c ON cy.club_id = c.club_id
-               LEFT JOIN expenses e ON cy.club_year_id = e.club_year_id
-               WHERE c.club_name = %s AND cy.year = %s
-               GROUP BY c.club_name, cy.year, cy.budget'''
-    row = fetch_one(cursor, query, (club_name, year))
+               LEFT JOIN expense e ON cy.club_name = e.club_name AND cy.school_year = e.school_year
+               WHERE cy.club_name = %s AND cy.school_year = %s
+               GROUP BY cy.club_name, cy.school_year, cy.budget_amount'''
+    row = fetch_one(cursor, query, (club_name, school_year))
     if row:
-        club_name, year, budget, total_expenses = row
+        club_name, school_year, budget, total_expenses = row
         remaining = budget - total_expenses
-        print(f'Club {club_name} ({year}) budget: ${budget:.2f}, expenses: ${total_expenses:.2f}, remaining: ${remaining:.2f}')
+        print(f'Club {club_name} ({school_year}) budget: ${budget:.2f}, expenses: ${total_expenses:.2f}, remaining: ${remaining:.2f}')
     else:
         print('Club/year record not found.')
 
 
 def report_total_budget(cursor):
     print('\nReport total budget for a year')
-    year = input('Year: ').strip()
-    query = 'SELECT IFNULL(SUM(budget), 0) FROM club_year WHERE year = %s'
-    total_budget = fetch_one(cursor, query, (year,))[0]
-    print(f'Total budget across all clubs in {year}: ${total_budget:.2f}')
+    school_year = input('Year: ').strip()
+    query = 'SELECT IFNULL(SUM(budget_amount), 0) FROM club_year WHERE school_year = %s'
+    total_budget = fetch_one(cursor, query, (school_year,))[0]
+    print(f'Total budget across all clubs in {school_year}: ${total_budget:.2f}')
 
 
 def assign_advisor(cursor):
     print('\nAssign faculty advisor for a club year')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
-    advisor_first = input('Advisor first name: ').strip()
-    advisor_last = input('Advisor last name: ').strip()
-    advisor_id = select_faculty_id(cursor, advisor_first, advisor_last)
-    club_year_id = select_club_year_id(cursor, club_name, year)
-    if not advisor_id:
+    school_year = input('Year: ').strip()
+    faculty_name = input('Faculty advisor name: ').strip()
+    faculty_id = select_faculty_id(cursor, faculty_name)
+    if not faculty_id:
         print('Advisor not found.')
         return
-    if not club_year_id:
+    if not club_year_exists(cursor, club_name, school_year):
         print('Club/year record not found. Create the club/year record first by recording the budget.')
         return
-    cursor.execute('UPDATE club_year SET advisor_id = %s WHERE club_year_id = %s', (advisor_id, club_year_id))
+    cursor.execute('UPDATE club_year SET faculty_id = %s WHERE club_name = %s AND school_year = %s', (faculty_id, club_name, school_year))
     print('Advisor assigned.')
 
 
 def list_clubs_by_faculty(cursor):
     print('\nList clubs advised by faculty')
-    faculty_name = input('Faculty first and last name: ').strip().split()
-    if len(faculty_name) != 2:
-        print('Provide first and last name.')
-        return
-    faculty_id = select_faculty_id(cursor, faculty_name[0], faculty_name[1])
+    faculty_name = input('Faculty name: ').strip()
+    faculty_id = select_faculty_id(cursor, faculty_name)
     if not faculty_id:
         print('Faculty not found.')
         return
-    query = '''SELECT c.club_name, cy.year
+    query = '''SELECT cy.club_name, cy.school_year
                FROM club_year cy
-               JOIN clubs c ON cy.club_id = c.club_id
-               WHERE cy.advisor_id = %s
-               ORDER BY cy.year, c.club_name'''
+               WHERE cy.faculty_id = %s
+               ORDER BY cy.school_year, cy.club_name'''
     rows = fetch_all(cursor, query, (faculty_id,))
     if rows:
-        for club_name, year in rows:
-            print(f'- {club_name} ({year})')
+        for club_name, school_year in rows:
+            print(f'- {club_name} ({school_year})')
     else:
         print('No club assignments found for that faculty member.')
 
 
 def student_join_club(cursor):
     print('\nStudent joins a club')
-    student_first = input('Student first name: ').strip()
-    student_last = input('Student last name: ').strip()
+    student_name = input('Student name: ').strip()
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
-    join_date_text = input('Join date (YYYY-MM-DD): ').strip()
-    try:
-        joined_on = datetime.strptime(join_date_text, '%Y-%m-%d').date()
-    except ValueError:
-        print('Invalid date format.')
+    school_year = input('Year: ').strip()
+    student_id = select_student_id(cursor, student_name)
+    if not student_id:
+        print('Student not found.')
         return
-    student_id = select_student_id(cursor, student_first, student_last)
-    club_year_id = select_club_year_id(cursor, club_name, year)
-    if not student_id or not club_year_id:
-        print('Student or club/year not found.')
+    if not club_year_exists(cursor, club_name, school_year):
+        print('Club/year not found.')
         return
     try:
-        cursor.execute('INSERT INTO club_membership (student_id, club_year_id, joined_on) VALUES (%s, %s, %s)',
-                       (student_id, club_year_id, joined_on))
+        cursor.execute(
+            'INSERT INTO member (club_name, school_year, student_id) VALUES (%s, %s, %s)',
+            (club_name, school_year, student_id),
+        )
         print('Student added to club.')
     except Error as err:
         print('Failed to add membership:', err)
@@ -323,16 +331,14 @@ def student_join_club(cursor):
 
 def student_leave_club(cursor):
     print('\nStudent leaves a club')
-    student_first = input('Student first name: ').strip()
-    student_last = input('Student last name: ').strip()
+    student_name = input('Student name: ').strip()
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
-    student_id = select_student_id(cursor, student_first, student_last)
-    club_year_id = select_club_year_id(cursor, club_name, year)
-    if not student_id or not club_year_id:
-        print('Student or club/year not found.')
+    school_year = input('Year: ').strip()
+    student_id = select_student_id(cursor, student_name)
+    if not student_id:
+        print('Student not found.')
         return
-    cursor.execute('DELETE FROM club_membership WHERE student_id = %s AND club_year_id = %s', (student_id, club_year_id))
+    cursor.execute('DELETE FROM member WHERE student_id = %s AND club_name = %s AND school_year = %s', (student_id, club_name, school_year))
     if cursor.rowcount:
         print('Student removed from club membership.')
     else:
@@ -342,70 +348,68 @@ def student_leave_club(cursor):
 def list_members_of_club(cursor):
     print('\nList members of a club')
     club_name = input('Club name: ').strip()
-    year = input('Year: ').strip()
-    query = '''SELECT s.first_name, s.last_name, s.grade, cm.joined_on
-               FROM club_membership cm
-               JOIN students s ON cm.student_id = s.student_id
-               JOIN club_year cy ON cm.club_year_id = cy.club_year_id
-               JOIN clubs c ON cy.club_id = c.club_id
-               WHERE c.club_name = %s AND cy.year = %s
-               ORDER BY s.last_name, s.first_name'''
-    rows = fetch_all(cursor, query, (club_name, year))
+    school_year = input('Year: ').strip()
+    query = '''SELECT s.student_name, s.grade
+               FROM member m
+               JOIN student s ON m.student_id = s.student_id
+               WHERE m.club_name = %s AND m.school_year = %s
+               ORDER BY s.student_name'''
+    rows = fetch_all(cursor, query, (club_name, school_year))
     if rows:
-        for first_name, last_name, grade, joined_on in rows:
-            print(f'- {first_name} {last_name}, grade {grade}, joined on {joined_on}')
+        for student_name, grade in rows:
+            print(f'- {student_name}, grade {grade}')
     else:
         print('No members found for that club/year.')
 
 
 def list_clubs_for_student(cursor):
     print('\nList clubs for a student')
-    student_first = input('Student first name: ').strip()
-    student_last = input('Student last name: ').strip()
-    student_id = select_student_id(cursor, student_first, student_last)
+    student_name = input('Student name: ').strip()
+    student_id = select_student_id(cursor, student_name)
     if not student_id:
         print('Student not found.')
         return
-    query = '''SELECT c.club_name, cy.year, cm.joined_on
-               FROM club_membership cm
-               JOIN club_year cy ON cm.club_year_id = cy.club_year_id
-               JOIN clubs c ON cy.club_id = c.club_id
-               WHERE cm.student_id = %s
-               ORDER BY cy.year, c.club_name'''
+    query = '''SELECT m.club_name, m.school_year
+               FROM member m
+               WHERE m.student_id = %s
+               ORDER BY m.school_year, m.club_name'''
     rows = fetch_all(cursor, query, (student_id,))
     if rows:
-        for club_name, year, joined_on in rows:
-            print(f'- {club_name} ({year}), joined on {joined_on}')
+        for club_name, school_year in rows:
+            print(f'- {club_name} ({school_year})')
     else:
         print('No club memberships found for that student.')
 
 
 def view_student_schedule(cursor):
     print('\nView student schedule for a date')
-    student_first = input('Student first name: ').strip()
-    student_last = input('Student last name: ').strip()
+    student_name = input('Student name: ').strip()
     date_text = input('Date (YYYY-MM-DD): ').strip()
     try:
         schedule_date = datetime.strptime(date_text, '%Y-%m-%d').date()
     except ValueError:
         print('Invalid date format.')
         return
-    student_id = select_student_id(cursor, student_first, student_last)
+    student_id = select_student_id(cursor, student_name)
     if not student_id:
         print('Student not found.')
         return
-    query = '''SELECT c.club_name, a.activity_type, a.start_time, a.end_time, a.classroom, a.description
-               FROM club_membership cm
-               JOIN activity a ON cm.club_year_id = a.club_year_id
-               JOIN club_year cy ON a.club_year_id = cy.club_year_id
-               JOIN clubs c ON cy.club_id = c.club_id
-               WHERE cm.student_id = %s AND a.activity_date = %s
-               ORDER BY a.start_time'''
-    rows = fetch_all(cursor, query, (student_id, schedule_date))
+    query = '''SELECT m.club_name, 'meeting' AS activity_type, mt.start_time, mt.end_time, mt.classroom, mt.description
+               FROM member m
+               JOIN meeting mt ON m.club_name = mt.club_name AND m.school_year = mt.school_year
+               WHERE m.student_id = %s AND mt.meeting_date = %s
+               UNION ALL
+               SELECT m.club_name, 'event', e.start_time, e.end_time, NULL, e.description
+               FROM member m
+               JOIN `event` e ON m.club_name = e.club_name AND m.school_year = e.school_year
+               WHERE m.student_id = %s AND e.event_date = %s
+               ORDER BY start_time'''
+    rows = fetch_all(cursor, query, (student_id, schedule_date, student_id, schedule_date))
     if rows:
-        print(f'Activities for {student_first} {student_last} on {schedule_date}:')
+        print(f'Activities for {student_name} on {schedule_date}:')
         for club_name, activity_type, start_time, end_time, classroom, description in rows:
-            print(f'- {club_name}: {activity_type} {start_time}-{end_time} in {classroom} - {description}')
+            classroom_str = f' in {classroom}' if classroom else ''
+            print(f'- {club_name}: {activity_type} {start_time}-{end_time}{classroom_str} - {description}')
     else:
         print('No scheduled activities found for that student on this date.')
 
