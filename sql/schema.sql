@@ -60,7 +60,7 @@ CREATE TABLE expense (
     expense_date DATE NOT NULL,
     amount DECIMAL(10,2) NOT NULL,
     `description` VARCHAR(250),
-    CONSTRAINT expense_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name),
+    CONSTRAINT expense_clubName_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year),
     CONSTRAINT expense_nonnegative_CK CHECK (amount >= 0)
 );
 
@@ -135,7 +135,41 @@ BEGIN
     END IF;
 END$$
 
--- Create trigger to check remaining budget when creating expenses?
+CREATE TRIGGER trg_expense_before_insert
+BEFORE INSERT ON expense
+FOR EACH ROW
+BEGIN
+    IF (
+        SELECT SUM(amount)+NEW.amount FROM expense 
+        WHERE club_name = NEW.club_name 
+        AND school_year = NEW.school_year
+        ) > (
+            SELECT budget_amount 
+            FROM club_year
+            WHERE club_name = NEW.club_name
+            AND school_year = NEW.school_year
+        ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Expense would exceed budget.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_expense_before_update
+BEFORE UPDATE ON expense
+FOR EACH ROW
+BEGIN
+    IF (
+        SELECT SUM(amount)+NEW.amount FROM expense 
+        WHERE club_name = NEW.club_name 
+        AND school_year = NEW.school_year
+        ) > (
+            SELECT budget_amount 
+            FROM club_year
+            WHERE club_name = NEW.club_name
+            AND school_year = NEW.school_year
+        ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Expense would exceed budget.';
+    END IF;
+END$$
 
 DELIMITER ;
 
