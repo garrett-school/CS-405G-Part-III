@@ -60,7 +60,7 @@ CREATE TABLE expense (
     expense_date DATE NOT NULL,
     amount DECIMAL(10,2) NOT NULL,
     `description` VARCHAR(250),
-    CONSTRAINT expense_clubName_FK FOREIGN KEY (club_name) REFERENCES club(club_name),
+    CONSTRAINT expense_clubName_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year),
     CONSTRAINT expense_nonnegative_CK CHECK (amount >= 0)
 );
 
