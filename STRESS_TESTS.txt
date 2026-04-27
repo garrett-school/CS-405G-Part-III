@@ -1,0 +1,91 @@
+Below are some tests done to ensure triggers, and constraints are operatioinal and working as intended
+
+-----------------BUDGET CONSTRAINT-----------------
+
+#TEST if trigger works##
+
+Select an option: 7
+
+Record expense for a club
+Club name: Band
+Year: 2024
+Expense amount: 8500
+Description: Trigger Test
+Expense date (YYYY-MM-DD): 2024-10-04
+Database error: 1644 (45000): Expense would exceed budget.
+
+##CHECK if initial budget remains##
+
+Select an option: 8
+
+Report club expense summary
+Club name: Band
+Year: 2024
+Club Band (2024) budget: $8000.00, expenses: $1250.00, remaining: $6750.00
+
+
+-----------------DOUBLE BOOKING-----------------
+
+##Test if two bookings causes error##
+
+Select an option: 1
+
+##Test bookings and overlap##
+
+Add meeting or event
+Club name: MathCounts
+Year: 2024
+Type (meeting/event): meeting
+Date (YYYY-MM-DD): 2024-09-12
+Start time (HH:MM): 16:30
+End time (HH:MM): 17:00
+Description: Should fail
+Classroom: Room 101
+Failed to add activity: 1644 (45000): Classroom double-booking detected for the requested time slot.
+
+-----------------OVERLAPPING-----------------
+
+##Test for Overlap##
+
+Select an option: 1
+
+Add meeting or event
+Club name: Band
+Year: 2024
+Type (meeting/event): meeting
+Date (YYYY-MM-DD): 2024-09-12
+Start time (HH:MM): 16:30
+End time (HH:MM): 17:30
+Description: Overlap Test
+Classroom: Room 999
+Failed to add activity: 1644 (45000): Club cannot schedule overlapping activities on the same date.
+
+
+-----------------Time Constraint-----------------
+
+##Test Booking constraint (Initial Time should not be larger than final time)##
+Select an option: 1
+
+Add meeting or event
+Club name: Band
+Year: 2024
+Type (meeting/event): meeting
+Date (YYYY-MM-DD): 2024--09-16
+Start time (HH:MM): 17:00
+End time (HH:MM): 16:30
+Description: Timeframe test
+Date or time format is invalid.
+
+-----------------FAKE Club-----------------
+
+##Test fake club##
+
+Select an option: 7
+
+Record expense for a club
+Club name: Fake Club
+Year: 2024
+Expense amount: 50
+Description: Should Fail
+Expense date (YYYY-MM-DD): 2024-10-04
+Club/year not found.

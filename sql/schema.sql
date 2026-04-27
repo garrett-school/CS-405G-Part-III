@@ -40,6 +40,8 @@ CREATE TABLE meeting (
     `description` VARCHAR(250),
     classroom VARCHAR(25),
     CONSTRAINT meeting_clubYear_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year)
+    --check time to ensure correct ordering
+    CONSTRAINT meeting_time_CK CHECK (start_time < end_time)
 );
 
 CREATE TABLE event (
@@ -51,6 +53,8 @@ CREATE TABLE event (
     end_time TIME NOT NULL,
     `description` VARCHAR(250),
     CONSTRAINT event_clubYear_FK FOREIGN KEY (club_name, school_year) REFERENCES club_year(club_name, school_year)
+    --check time to ensure correct ordering
+    CONSTRAINT event_time_CK CHECK (start_time < end_time)
 );
 
 CREATE TABLE expense (
@@ -111,7 +115,8 @@ BEGIN
     DECLARE overlap_count INT DEFAULT 0;
 
     SELECT COUNT(*) INTO overlap_count
-    FROM activity
+    --Change this from activity to meeting
+    FROM meeting
     WHERE meeting_date = NEW.meeting_date
       AND classroom = NEW.classroom
       AND NEW.start_time < end_time
@@ -123,7 +128,8 @@ BEGIN
     END IF;
 
     SELECT COUNT(*) INTO overlap_count
-    FROM activity
+    --Change this from activity to meeting
+    FROM meeting
     WHERE meeting_date = NEW.meeting_date
       AND club_name = NEW.club_name
       AND NEW.start_time < end_time
@@ -135,7 +141,49 @@ BEGIN
     END IF;
 END$$
 
--- Create trigger to check remaining budget when creating expenses?
+    DELIMITER $$
+    
+--Create trigger to check remaining budget when creating expenses
+CREATE TRIGGER trg_expense_before_insert
+BEFORE INSERT ON expense
+FOR EACH ROW
+BEGIN
+    IF (
+        SELECT IFNULL(SUM(amount), 0) + NEW.amount
+        FROM expense
+        WHERE club_name = NEW.club_name
+          AND school_year = NEW.school_year
+    ) > (
+        SELECT budget_amount
+        FROM club_year
+        WHERE club_name = NEW.club_name
+          AND school_year = NEW.school_year
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Expense would exceed budget.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_expense_before_update
+BEFORE UPDATE ON expense
+FOR EACH ROW
+BEGIN
+    IF (
+        SELECT IFNULL(SUM(amount), 0) - OLD.amount + NEW.amount
+        FROM expense
+        WHERE club_name = NEW.club_name
+          AND school_year = NEW.school_year
+    ) > (
+        SELECT budget_amount
+        FROM club_year
+        WHERE club_name = NEW.club_name
+          AND school_year = NEW.school_year
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Expense would exceed budget.';
+    END IF;
+END$$
+
 
 DELIMITER ;
 
