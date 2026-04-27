@@ -126,3 +126,5 @@ The database enforces the major project constraints, including:
 - triggers prevent double-booking of classrooms for meetings
 - triggers reject overlapping meetings or events for the same club on the same date
 - triggers reject a meeting that overlaps with an event for the same club on the same date, and vice versa
+- triggers prevent a club’s total expenses from exceeding its yearly budget
+- triggers prevent lowering a club’s budget below expenses already recorded for that year

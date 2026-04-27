@@ -243,7 +243,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'This classroom is already booked for the requested meeting time.';
+        SET MESSAGE_TEXT = 'This classroom is already booked for the requested meeting time. Insert rejected.';
     END IF;
 
     -- Next, check that the club does not already have a meeting during the same time and date
@@ -257,7 +257,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club may not schedule overlapping meetings on the same date.';
+        SET MESSAGE_TEXT = 'A club may not schedule overlapping meetings on the same date. Insert rejected.';
     END IF;
 
     -- Finally, check that the club's meeting does not overlap with one of their scheduled events
@@ -271,7 +271,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club may not schedule a meeting that overlaps with one of their events on the same date.';
+        SET MESSAGE_TEXT = 'A club may not schedule a meeting that overlaps with one of their events on the same date. Insert rejected.';
     END IF;
 END//
 
@@ -294,7 +294,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'This classroom is already booked for the requested meeting time.';
+        SET MESSAGE_TEXT = 'This classroom is already booked for the requested meeting time. Update rejected.';
     END IF;
 
     -- Next, check that the club does not already have a meeting during the same time and date
@@ -309,7 +309,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club cannot schedule overlapping meetings on the same date.';
+        SET MESSAGE_TEXT = 'A club cannot schedule overlapping meetings on the same date. Update rejected.';
     END IF;
 
     -- Finally, check that the club's meeting does not overlap with one of their scheduled events
@@ -323,7 +323,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club cannot schedule a meeting that overlaps with an event on the same date.';
+        SET MESSAGE_TEXT = 'A club cannot schedule a meeting that overlaps with an event on the same date. Update rejected.';
     END IF;
 END//
 
@@ -346,7 +346,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club cannot schedule overlapping events on the same date.';
+        SET MESSAGE_TEXT = 'A club cannot schedule overlapping events on the same date. Insert rejected.';
     END IF;
 
     -- Next, check that the club's event does not overlap with one of their scheduled meetings
@@ -360,7 +360,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club cannot schedule an event that overlaps with a meeting on the same date.';
+        SET MESSAGE_TEXT = 'A club cannot schedule an event that overlaps with a meeting on the same date. Insert rejected.';
     END IF;
 END//
 
@@ -384,7 +384,7 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club cannot schedule overlapping events on the same date.';
+        SET MESSAGE_TEXT = 'A club cannot schedule overlapping events on the same date. Update rejected.';
     END IF;
 
     -- Next, check that the club's event does not overlap with one of their scheduled meetings
@@ -398,9 +398,106 @@ BEGIN
 
     IF overlap_count > 0 THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'A club cannot schedule an event that overlaps with a meeting on the same date.';
+        SET MESSAGE_TEXT = 'A club cannot schedule an event that overlaps with a meeting on the same date. Update rejected.';
     END IF;
 END//
+
+
+-- Trigger to prevent a new expense from allowing a club's total expenses to exceed their budget
+CREATE TRIGGER expense_within_budget_before_insert
+BEFORE INSERT ON expense
+FOR EACH ROW
+BEGIN
+    DECLARE current_total DECIMAL(10,2) DEFAULT 0;
+    DECLARE budget_total DECIMAL(10,2);
+
+    -- Find the budget for the club in the selected year
+    SELECT budget_amount INTO budget_total
+    FROM budget
+    WHERE club_name = NEW.club_name
+      AND school_year = NEW.school_year;
+
+    -- Find the total of the club's other expenses in the year 
+    SELECT SUM(amount) INTO current_total
+    FROM expense
+    WHERE club_name = NEW.club_name
+      AND school_year = NEW.school_year;
+
+    -- If no prior expenses, sum of expenses is 0
+    IF current_total IS NULL THEN
+        SET current_total = 0;
+    END IF;
+
+    -- If the inserted expense would put the club above their budget
+    IF current_total + NEW.amount > budget_total THEN
+        -- Report that this will go over budget and reject insertion
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'This expense would exceed the club budget for that school year. Insert rejected';
+    END IF;
+END//
+
+
+-- Trigger to prevent an updated expense from making total expenses exceed the club's budget
+CREATE TRIGGER expense_within_budget_before_update
+BEFORE UPDATE ON expense
+FOR EACH ROW
+BEGIN
+    DECLARE current_total DECIMAL(10,2) DEFAULT 0;
+    DECLARE budget_total DECIMAL(10,2);
+
+    -- Find the budget for the selected club in the selected year
+    SELECT budget_amount INTO budget_total
+    FROM budget
+    WHERE club_name = NEW.club_name
+      AND school_year = NEW.school_year;
+
+    -- Find the total of the other expenses for the club in this year
+    SELECT SUM(amount) INTO current_total
+    FROM expense
+    WHERE expense_id <> OLD.expense_id
+      AND club_name = NEW.club_name
+      AND school_year = NEW.school_year;
+
+    -- If no expenses, then expenses = 0
+    IF current_total IS NULL THEN
+        SET current_total = 0;
+    END IF;
+
+    -- If the updated value for the expense would put the club above their budget
+    IF current_total + NEW.amount > budget_total THEN
+        -- Report that this will go over budget and reject update
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'This expense would exceed the club budget for that school year. Update rejected';
+    END IF;
+END//
+
+-- Trigger to ensure a club's budget is not lowered below the club's already recorded expenses
+CREATE TRIGGER budget_not_below_expenses_before_update
+BEFORE UPDATE ON budget
+FOR EACH ROW
+BEGIN
+    DECLARE current_expenses DECIMAL(10,2) DEFAULT 0;
+
+    -- Find the total funds the club has expended in the selected year
+    SELECT SUM(amount) INTO current_expenses
+    FROM expense
+    WHERE club_name = NEW.club_name
+      AND school_year = NEW.school_year;
+
+    -- If no expenses, then expenses = 0
+    IF current_expenses IS NULL THEN
+        SET current_expenses = 0;
+    END IF;
+
+    -- If the new budget would be less than the amount the club has already spent in the year
+    IF NEW.budget_amount < current_expenses THEN
+        -- Inform user of this and reject the update
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Cannot lower budget below the total expenses already recorded by the club in this year. Update rejected.';
+    END IF;
+END//
+
+
 
 DELIMITER ;
 

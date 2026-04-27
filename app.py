@@ -98,8 +98,21 @@ def input_money(prompt):
     return amount
 
 
+# Pause after user selects an options so they can read the output, then clear the screen
+def pause_and_clear():
+    # Blank lines for readability, followed by allowing user to choose when to move on
+    print()
+    print()
+    input("\nPress Enter to continue...")
+    os.system("cls" if os.name == "nt" else "clear")
+
+
 # Report rows from database to user
 def print_rows(rows, headers):
+
+    print()
+    print()
+
     # If empty, report no records to show
     if not rows:
         print("No records found.")
@@ -172,7 +185,7 @@ def view_financial_report(cursor):
         WHERE club_name = %s AND school_year = %s
     """
     rows = fetch_all(cursor, query, (club_name, school_year))
-    print_rows(rows, ["Club", "Year", "Budget", "Expenses", "Remaining"])
+    print_rows(rows, ["Club", "Year", "Total Budget", "Expenses", "Remaining Funds"])
 
 # Allow user to see the total budget across all clubs in a chosen school year
 def view_total_budget(cursor):
@@ -421,6 +434,10 @@ def main():
     }
 
     # Until the user enters 0 to quit, allow them to explore database with given options
+    # Start with a clean screen
+    os.system("cls" if os.name == "nt" else "clear")
+
+    # Until the user enters 0 to quit, allow them to explore database with given options
     while True:
         print(MENU)
         choice = input("Select an option: ").strip()
@@ -432,6 +449,7 @@ def main():
         action = actions.get(choice)
         if action is None:
             print("Unknown option.")
+            pause_and_clear()
             continue
 
         # Based on user's input, proceed (perform action, allow reentry, or trigger error)
@@ -444,6 +462,9 @@ def main():
         except Error as err:
             connection.rollback()
             print("Database error:", err)
+
+        pause_and_clear()
+
 
     # End the connection, as the user has quit
     cursor.close()
